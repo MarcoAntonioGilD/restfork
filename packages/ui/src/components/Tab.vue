@@ -129,6 +129,7 @@ watch(() => props.collectionItem, (newValue, oldValue) => {
     display: flex;
     height: 100%;
     overflow: auto;
+    position: relative;
 }
 
 .request-response-panels.top-bottom {

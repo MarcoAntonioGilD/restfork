@@ -86,6 +86,8 @@
                     Logs
                 </a>
             </div>
+            <!-- User Menu Component -->
+            <UserMenu />
             <span class="spacer"></span>
             <div class="github-star">
                 <a class="gh-button-container" href="https://github.com/flawiddsouza/Restfox" rel="noopener" target="_blank" title="Star Restfox" aria-label="Star Restfox on GitHub">
@@ -122,6 +124,7 @@ import SettingsModal from './modals/SettingsModal.vue'
 import EnvironmentModal from './modals/EnvironmentModal.vue'
 import BackupAndRestoreModal from './modals/BackupAndRestoreModal.vue'
 import LogsModal from './modals/LogsModal.vue'
+import UserMenu from './UserMenu.vue'
 import {
     exportRestfoxCollection,
     applyTheme,
@@ -144,7 +147,8 @@ export default {
         SettingsModal,
         EnvironmentModal,
         BackupAndRestoreModal,
-        LogsModal
+        LogsModal,
+        UserMenu
     },
     props: {
         nav: String,

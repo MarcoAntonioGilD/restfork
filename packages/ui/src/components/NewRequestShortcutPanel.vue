@@ -66,44 +66,62 @@ export default {
 
 <style scoped>
 .outer-container {
-    display: grid;
-    place-items: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     width: 100%;
+    height: 100%;
+    padding: 40px;
+    box-sizing: border-box;
 }
 
 .inner-container {
     text-align: center;
+    max-width: 500px;
+    width: 100%;
 }
 
 .workspace-overview {
-    margin-bottom: 20px;
+    margin-bottom: 32px;
 }
 
 .logo {
-    width: 250px;
-    height: 250px;
+    width: 200px;
+    height: 200px;
     background-color: var(--background-color);
-    margin-bottom: 10px;
+    margin: 0 auto 16px;
+    display: block;
 }
 
 .create-request p {
-    margin-bottom: 10px;
+    margin-bottom: 20px;
+    font-size: 16px;
+    color: var(--text-color, #666);
+    font-weight: 400;
 }
 
 .icons {
     display: flex;
     justify-content: center;
+    gap: 16px;
+    flex-wrap: wrap;
 }
 
 .icons img {
     width: 3rem;
     height: 3rem;
-    margin: 0 10px;
     cursor: pointer;
     background: var(--background-color);
+    border-radius: 6px;
+    padding: 8px;
+    transition: all 0.2s ease;
+    border: 1px solid var(--border-color, #e5e5e5);
 }
 
 .icons img:hover {
-    color: var(--default-border-color);
+    background: var(--primary-color, #6366f1);
+    border-color: var(--primary-color, #6366f1);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
 }
 </style>

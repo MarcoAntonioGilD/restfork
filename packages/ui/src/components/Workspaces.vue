@@ -1,19 +1,50 @@
 <template>
     <div class="workspace-container">
-        <div class="workspace" v-for="workspace in workspaces" @click="setActiveWorkspace(workspace)">
-            <div class="workspace-settings-button-container">
-                <div class="workspace-settings-button" @click.stop="handleContextMenu($event, workspace)">
-                    <svg width="1em" height="1em" viewBox="0 0 14 3" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path fill-rule="evenodd" clip-rule="evenodd" d="M1.5 3a1.5 1.5 0 100-3 1.5 1.5 0 000 3zM7 3a1.5 1.5 0 100-3 1.5 1.5 0 000 3zM12.5 3a1.5 1.5 0 100-3 1.5 1.5 0 000 3z" fill=""></path>
-                    </svg>
+        <!-- Área cuando no hay workspaces -->
+        <div v-if="workspaces.length === 0" class="empty-state">
+            <div class="empty-state-content">
+                <div class="empty-state-icon">
+                    <i class="fas fa-folder-plus" style="font-size: 4rem; color: var(--text-color-tertiary, #ccc);"></i>
                 </div>
+                <h2 style="margin: 1rem 0; color: var(--text-color, #333);">No Workspaces Found</h2>
+                <p style="margin-bottom: 2rem; color: var(--text-color-secondary, #666);">
+                    Create your first workspace to get started with Restfork.
+                </p>
+                <button 
+                    @click="showAddWorkspaceModal = true" 
+                    class="button button-primary"
+                    style="padding: 0.75rem 1.5rem; font-size: 1rem;"
+                >
+                    <i class="fas fa-plus" style="margin-right: 0.5rem;"></i>
+                    Create Workspace
+                </button>
             </div>
-            <div class="workspace-name">{{ workspace.name }}</div>
-            <div class="workspace-timestamp">{{ dateFormat(workspace.createdAt) }}</div>
         </div>
+
+        <!-- Lista de workspaces existentes -->
+        <div v-else>
+            <div class="workspace" v-for="workspace in workspaces" @click="setActiveWorkspace(workspace)">
+                <div class="workspace-settings-button-container">
+                    <div class="workspace-settings-button" @click.stop="handleContextMenu($event, workspace)">
+                        <svg width="1em" height="1em" viewBox="0 0 14 3" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path fill-rule="evenodd" clip-rule="evenodd" d="M1.5 3a1.5 1.5 0 100-3 1.5 1.5 0 000 3zM7 3a1.5 1.5 0 100-3 1.5 1.5 0 000 3zM12.5 3a1.5 1.5 0 100-3 1.5 1.5 0 000 3z" fill=""></path>
+                        </svg>
+                    </div>
+                </div>
+                <div class="workspace-name">{{ workspace.name }}</div>
+                <div class="workspace-timestamp">{{ dateFormat(workspace.createdAt) }}</div>
+            </div>
+        </div>
+        
         <ContextMenu :options="options" v-model:show="showContextMenu" @click="handleContextMenuClick" :element="contextMenuElement" />
         <AddWorkspaceModal v-model:showModal="showAddWorkspaceModal" :workspace="contextMenuWorkspace" :is-electron="flags.isElectron" />
         <DuplicateWorkspaceModal v-model:showModal="showDuplicateWorkspaceModal" :workspace-to-duplicate="workspaceToDuplicate" :is-electron="flags.isElectron" />
+        
+        <!-- Modal de prueba para autenticación -->
+        <AuthModal 
+            v-model:showModal="showTestAuthModal"
+            @authSuccess="handleTestAuthSuccess"
+        />
     </div>
 </template>
 
@@ -21,13 +52,15 @@
 import ContextMenu from './ContextMenu.vue'
 import AddWorkspaceModal from './modals/AddWorkspaceModal.vue'
 import DuplicateWorkspaceModal from './modals/DuplicateWorkspaceModal.vue'
+import AuthModal from './modals/AuthModal.vue'
 import dayjs from 'dayjs'
 
 export default {
     components: {
         ContextMenu,
         AddWorkspaceModal,
-        DuplicateWorkspaceModal
+        DuplicateWorkspaceModal,
+        AuthModal
     },
     data() {
         return {
@@ -36,7 +69,8 @@ export default {
             contextMenuWorkspace: null,
             showAddWorkspaceModal: false,
             showDuplicateWorkspaceModal: false,
-            workspaceToDuplicate: null
+            workspaceToDuplicate: null,
+            showTestAuthModal: false
         }
     },
     computed: {
@@ -119,6 +153,21 @@ export default {
         },
         dateFormat(date) {
             return dayjs(date).format('DD-MMM-YY hh:mm A')
+        },
+        async handleTestAuthSuccess(authData) {
+            try {
+                await this.$store.dispatch('setCurrentUser', authData.user)
+                await this.$store.dispatch('setCurrentSession', authData.session)
+                
+                this.$toast.success(
+                    authData.isNewUser 
+                        ? `¡Bienvenido ${authData.user.username}! Tu cuenta ha sido creada.`
+                        : `¡Bienvenido de vuelta, ${authData.user.username}!`
+                )
+            } catch (error) {
+                console.error('Error setting user session:', error)
+                this.$toast.error('Autenticación exitosa pero hubo un error configurando tu sesión.')
+            }
         }
     }
 }

@@ -2,13 +2,16 @@
 import WorkspacesFrame from '@/components/WorkspacesFrame.vue'
 import Frame from '@/components/Frame.vue'
 import ReloadPrompt from '@/components/ReloadPrompt.vue'
+import AuthInterceptor from '@/components/AuthInterceptor.vue'
 </script>
 
 <template>
-    <WorkspacesFrame v-if="appLoaded && !activeWorkspaceLoaded" />
-    <Frame v-if="appLoaded && activeWorkspaceLoaded" />
-    <ReloadPrompt />
-    <alert-confirm-prompt attach-to-window="true" />
+    <AuthInterceptor>
+        <WorkspacesFrame v-if="appLoaded && !activeWorkspaceLoaded" />
+        <Frame v-if="appLoaded && activeWorkspaceLoaded" />
+        <ReloadPrompt />
+        <alert-confirm-prompt attach-to-window="true" />
+    </AuthInterceptor>
 </template>
 
 <script>
@@ -287,7 +290,7 @@ export default {
         }
     },
     async created() {
-        this.$store.dispatch('loadGlobalPlugins')
+        // Run data migration for user context before loading any data
         await this.$store.dispatch('loadWorkspaces', () => {
             this.appLoaded = true
         })
@@ -444,6 +447,9 @@ export default {
         }
 
         initStoragePersistence()
+
+        // Inicializar autenticación
+        this.$store.dispatch('initializeAuth')
     },
     beforeUnmount() {
         window.removeEventListener('keydown', this.handleGlobalKeydown)

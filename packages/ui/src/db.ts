@@ -7,6 +7,8 @@ import {
     Plugin,
     RequestFinalResponse,
     Workspace,
+    User,
+    UserSession,
 } from './global'
 
 export class RestfoxDatabase extends Dexie {
@@ -14,32 +16,40 @@ export class RestfoxDatabase extends Dexie {
     collections!: Dexie.Table<any>
     plugins!: Dexie.Table<any>
     responses!: Dexie.Table<any>
+    users!: Dexie.Table<User>
+    sessions!: Dexie.Table<UserSession>
 
     constructor() {
         super('Restfox')
 
-        // Define the database schema
-        this.version(5).stores({
-            workspaces: '_id',
-            collections: '_id, workspaceId',
+        // Define the database schema with version 71 (higher than existing 70)
+        this.version(71).stores({
+            workspaces: '_id, userId',
+            collections: '_id, workspaceId, userId',
             plugins: '_id, workspaceId, collectionId',
             responses: '_id, collectionId',
+            users: '_id, username, email',
+            sessions: '_id, userId, token'
         })
     }
 }
 
 const db = new RestfoxDatabase()
 
-db.version(5).stores({
-    workspaces: '_id',
-    collections: '_id, workspaceId',
-    plugins: '_id, workspaceId, collectionId',
-    responses: '_id, collectionId'
-})
-
 export async function exportDB() {
     const blob = await db.export()
     return blob
+}
+
+// TEMPORARY: Clear database for version upgrade
+export async function clearDatabaseForUpgrade() {
+    try {
+        await db.delete()
+        console.log('Database cleared for version upgrade')
+        window.location.reload()
+    } catch (error) {
+        console.error('Error clearing database:', error)
+    }
 }
 
 export async function importDB(file: File) {
@@ -520,4 +530,160 @@ export async function createPlugins(plugins: Plugin[], workspaceId: string | nul
     }
 
     await db.plugins.bulkPut(plugins)
+}
+
+// Users
+
+export async function createUser(user: User): Promise<User> {
+    await db.users.add(user)
+    return user
+}
+
+export async function getUserByUsername(username: string): Promise<User | undefined> {
+    return db.users.where('username').equals(username).first()
+}
+
+export async function getUserByEmail(email: string): Promise<User | undefined> {
+    return db.users.where('email').equals(email).first()
+}
+
+export async function getUserById(userId: string): Promise<User | undefined> {
+    return db.users.get(userId)
+}
+
+export async function updateUser(userId: string, updatedFields: Partial<User>) {
+    await db.users.update(userId, updatedFields)
+}
+
+export async function deleteUser(userId: string) {
+    await db.users.delete(userId)
+    // También eliminar todas las sesiones del usuario
+    await db.sessions.where('userId').equals(userId).delete()
+}
+
+// Sessions
+
+export async function createSession(session: UserSession) {
+    await db.sessions.add(session)
+}
+
+export async function getSessionByToken(token: string): Promise<UserSession | undefined> {
+    return db.sessions.where('token').equals(token).first()
+}
+
+export async function getActiveSessionsByUserId(userId: string): Promise<UserSession[]> {
+    const now = Date.now()
+    return db.sessions
+        .where('userId').equals(userId)
+        .and(session => session.isActive && session.expiresAt > now)
+        .toArray()
+}
+
+export async function updateSession(sessionId: string, updatedFields: Partial<UserSession>) {
+    await db.sessions.update(sessionId, updatedFields)
+}
+
+export async function deactivateSession(sessionId: string) {
+    await db.sessions.update(sessionId, { isActive: false })
+}
+
+export async function deleteSession(sessionId: string) {
+    await db.sessions.delete(sessionId)
+}
+
+export async function deleteExpiredSessions() {
+    const now = Date.now()
+    await db.sessions.where('expiresAt').below(now).delete()
+}
+
+export async function deleteAllSessionsForUser(userId: string) {
+    await db.sessions.where('userId').equals(userId).delete()
+}
+
+// ===== CONTEXTO DE USUARIO =====
+let currentUserId: string | null = null
+
+export function getCurrentUserId(): string | null {
+    return currentUserId
+}
+
+export function setCurrentUserId(userId: string | null) {
+    currentUserId = userId
+}
+
+// ===== FUNCIONES DE DATOS FILTRADAS POR USUARIO =====
+
+// Workspaces filtrados por usuario
+export async function getAllWorkspacesForCurrentUser(): Promise<Workspace[]> {
+    const userId = getCurrentUserId()
+    if (!userId) {
+        // Usuario guest - devolver todos los workspaces sin userId
+        const allWorkspaces = await db.workspaces.toArray()
+        return allWorkspaces.filter(w => !w.userId || w.userId === null || w.userId === '')
+    }
+    return db.workspaces.where('userId').equals(userId).toArray()
+}
+
+// Collections filtradas por usuario
+export async function getCollectionForWorkspaceForCurrentUser(workspaceId: string): Promise<CollectionItem[]> {
+    const userId = getCurrentUserId()
+    const collections = await db.collections.where('workspaceId').equals(workspaceId).toArray()
+    
+    if (!userId) {
+        // Usuario guest - devolver collections sin userId
+        return collections.filter(c => !c.userId || c.userId === null || c.userId === '')
+    }
+    
+    return collections.filter(c => c.userId === userId)
+}
+
+// Wrapper para getCollectionForWorkspace que filtra por usuario
+export async function getCollectionForWorkspaceFiltered(workspaceId: string, type = null): Promise<{ error: string | null, collection: CollectionItem[], workspace: FileWorkspace | null, idMap: Map<string, string> | null }> {
+    const result = await getCollectionForWorkspace(workspaceId, type)
+    
+    // Si no hay error y tenemos collections, filtrarlas por usuario
+    if (!result.error && result.collection) {
+        const userId = getCurrentUserId()
+        
+        if (!userId) {
+            // Usuario guest - filtrar collections sin userId
+            result.collection = result.collection.filter(c => !c.userId || c.userId === null || c.userId === '')
+        } else {
+            // Usuario logueado - filtrar por su userId
+            result.collection = result.collection.filter(c => c.userId === userId)
+        }
+    }
+    
+    return result
+}
+
+// ===== MIGRACIÓN DE DATOS =====
+
+/**
+ * Migra datos existentes (guest) para asignarlos a un usuario específico
+ * Esto es útil para convertir datos de usuario guest a usuario logueado
+ */
+export async function migrateDataToUserContext(userId: string) {
+    if (!userId || userId === 'undefined') {
+        console.error('🚨 Refusing to migrate data - invalid userId:', userId)
+        return
+    }
+    
+    try {
+        // Migrar workspaces sin userId al usuario actual
+        const allWorkspaces = await db.workspaces.toArray()
+        const guestWorkspaces = allWorkspaces.filter(w => !w.userId || w.userId === null || w.userId === '')
+        for (const workspace of guestWorkspaces) {
+            await db.workspaces.update(workspace._id, { userId })
+        }
+        
+        // Migrar collections sin userId al usuario actual
+        const allCollections = await db.collections.toArray()
+        const guestCollections = allCollections.filter(c => !c.userId || c.userId === null || c.userId === '')
+        for (const collection of guestCollections) {
+            await db.collections.update(collection._id, { userId })
+        }
+    } catch (error) {
+        console.error('Error migrating data to user context:', error)
+    }
 }
