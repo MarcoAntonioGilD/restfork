@@ -290,7 +290,7 @@ export default {
         }
     },
     async created() {
-        // Run data migration for user context before loading any data
+        this.$store.dispatch('loadGlobalPlugins')
         await this.$store.dispatch('loadWorkspaces', () => {
             this.appLoaded = true
         })
