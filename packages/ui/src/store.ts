@@ -902,7 +902,7 @@ export const store = createStore<State>({
                 throw new Error('activeWorkspace is null')
             }
 
-            // Obtener el usuario actual
+            // Get current user
             const { getCurrentUserId } = await import('./db')
             const currentUserId = getCurrentUserId()
 
