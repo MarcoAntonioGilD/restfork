@@ -24,6 +24,7 @@ export interface CollectionItem {
     children?: CollectionItem[]
     parentId: string | null
     workspaceId: string
+    userId?: string | null
     method?: string
     url?: string
     body?: RequestBody
@@ -171,6 +172,11 @@ export interface State {
     tabEnvironmentResolved: any
     idMap: Map<string, string> | null
     skipPersistingActiveTab: boolean
+    // Authentication state
+    currentUser: User | null
+    currentSession: UserSession | null
+    isAuthenticated: boolean
+    authInitialized: boolean
 }
 
 export interface Plugin {
@@ -204,6 +210,7 @@ export interface WorkspaceCache {
 export interface Workspace {
     _id: string
     name: string
+    userId?: string | null
     environment?: any
     environments?: any[]
     currentEnvironment?: string
@@ -273,6 +280,31 @@ export interface OpenApiSpecPathParams {
 
 export interface EditorConfig {
     indentSize: number
+}
+
+export interface User {
+    _id: string
+    username: string
+    email?: string
+    passwordHash: string
+    salt: string
+    createdAt: number
+    updatedAt: number
+    isActive: boolean
+    profile?: {
+        displayName?: string
+        avatar?: string
+    }
+}
+
+export interface UserSession {
+    _id: string
+    userId: string
+    token: string
+    createdAt: number
+    expiresAt: number
+    isActive: boolean
+    lastActivity: number
 }
 
 export type SetEnvironmentVariableFunction = (name: string, value: string, scope?: 'workspace' | 'folder', pluginCollectionId?: string | null) => void

@@ -61,6 +61,8 @@ import {
     Workspace,
     RequestFinalResponse,
     RequestAuthentication,
+    User,
+    UserSession,
 } from './global'
 import * as queryParamsSync from '@/utils/query-params-sync'
 
@@ -363,6 +365,11 @@ export const store = createStore<State>({
             idMap: null,
             skipPersistingActiveTab: false,
             consoleLogs: [],
+            // Authentication state
+            currentUser: null,
+            currentSession: null,
+            isAuthenticated: false,
+            authInitialized: false,
         }
     },
     getters: {
@@ -674,6 +681,25 @@ export const store = createStore<State>({
         clearConsoleLogs(state) {
             state.consoleLogs = []
         },
+        // Authentication mutations
+        setCurrentUser(state, user) {
+            state.currentUser = user
+            state.isAuthenticated = !!user
+        },
+        setCurrentSession(state, session) {
+            state.currentSession = session
+        },
+        updateCurrentUser(state, updatedUser) {
+            state.currentUser = updatedUser
+        },
+        clearAuthentication(state) {
+            state.currentUser = null
+            state.currentSession = null
+            state.isAuthenticated = false
+        },
+        setAuthInitialized(state, initialized) {
+            state.authInitialized = initialized
+        },
     },
     actions: {
         addTab(context, tab) {
@@ -876,6 +902,10 @@ export const store = createStore<State>({
                 throw new Error('activeWorkspace is null')
             }
 
+            // Get current user
+            const { getCurrentUserId } = await import('./db')
+            const currentUserId = getCurrentUserId()
+
             let newCollectionItem: CollectionItem | null = null
 
             if(payload.type === 'request') {
@@ -889,6 +919,7 @@ export const store = createStore<State>({
                     },
                     parentId: payload.parentId,
                     workspaceId: context.state.activeWorkspace._id,
+                    userId: currentUserId,
                     url: payload.url || ''
                 }
 
@@ -903,7 +934,8 @@ export const store = createStore<State>({
                     _type: 'socket',
                     name: payload.name,
                     parentId: payload.parentId,
-                    workspaceId: context.state.activeWorkspace._id
+                    workspaceId: context.state.activeWorkspace._id,
+                    userId: currentUserId
                 }
             }
 
@@ -914,7 +946,8 @@ export const store = createStore<State>({
                     name: payload.name,
                     children: [],
                     parentId: payload.parentId,
-                    workspaceId: context.state.activeWorkspace._id
+                    workspaceId: context.state.activeWorkspace._id,
+                    userId: currentUserId
                 }
             }
 
@@ -1165,10 +1198,15 @@ export const store = createStore<State>({
         },
         async createWorkspace(context, payload) {
             const newWorkspaceId = nanoid()
+            
+            // Obtener el usuario actual
+            const { getCurrentUserId } = await import('./db')
+            const currentUserId = getCurrentUserId()
 
             const newWorkspace = {
                 _id: newWorkspaceId,
                 name: payload.name,
+                userId: currentUserId,
                 _type: payload._type,
                 location: payload.location,
                 createdAt: new Date().getTime(),
@@ -1227,7 +1265,8 @@ export const store = createStore<State>({
             context.state.workspaces = context.state.workspaces.filter(item => item._id !== workspaceId)
         },
         async loadWorkspaces(context, noActiveWorkspaceCallback = null) {
-            const workspaces = await getAllWorkspaces()
+            const { getAllWorkspacesForCurrentUser } = await import('./db')
+            const workspaces = await getAllWorkspacesForCurrentUser()
 
             if(workspaces.length > 0) {
                 context.commit('setWorkspaces', workspaces)
@@ -1283,7 +1322,8 @@ export const store = createStore<State>({
                 throw new Error('newWorkspaceId is null')
             }
 
-            const { collection: workspaceCollectionItems, workspace } = await getCollectionForWorkspace(sourceWorkspace._id)
+            const { getCollectionForWorkspaceFiltered } = await import('./db')
+            const { collection: workspaceCollectionItems, workspace } = await getCollectionForWorkspaceFiltered(sourceWorkspace._id)
 
             workspaceCollectionItems.forEach(collectionItem => {
                 collectionItem.workspaceId = newWorkspaceId as string
@@ -1296,7 +1336,7 @@ export const store = createStore<State>({
             if (type === 'file') {
                 // this will call ensureRestfoxCollection to create restfox workspace if it doesn't exist
                 // this method will return 0 records
-                await getCollectionForWorkspace(newWorkspaceId)
+                await getCollectionForWorkspaceFiltered(newWorkspaceId)
             }
 
             const result = await createCollections(newWorkspaceId, flattenTree(collectionTree))
@@ -1453,7 +1493,8 @@ export const store = createStore<State>({
                 context.state.plugins.workspace.push(...plugins)
             }
 
-            const { collection } = await getCollectionForWorkspace(context.state.activeWorkspace._id)
+            const { getCollectionForWorkspaceFiltered } = await import('./db')
+            const { collection } = await getCollectionForWorkspaceFiltered(context.state.activeWorkspace._id)
 
             context.commit('setCollection', collection)
 
@@ -1476,7 +1517,8 @@ export const store = createStore<State>({
                 throw new Error('activeWorkspace is null')
             }
 
-            const { collection, workspace, idMap } = await getCollectionForWorkspace(context.state.activeWorkspace._id)
+            const { getCollectionForWorkspaceFiltered } = await import('./db')
+            const { collection, workspace, idMap } = await getCollectionForWorkspaceFiltered(context.state.activeWorkspace._id)
             context.commit('setCollection', collection)
             context.state.idMap = idMap
 
@@ -1644,6 +1686,112 @@ export const store = createStore<State>({
 
             loadWorkspaceTabs(context)
         },
+        // Authentication actions
+        async initializeAuth(context) {
+            try {
+                // Buscar sesión activa en localStorage
+                const sessionToken = localStorage.getItem('restfork_session_token')
+                if (!sessionToken) {
+                    context.commit('setAuthInitialized', true)
+                    return
+                }
+
+                // Importar funciones de DB
+                const { getSessionByToken, getUserById, deleteExpiredSessions } = await import('./db')
+                const { isSessionValid, updateSessionActivity } = await import('./utils/auth-utils')
+
+                // Limpiar sesiones expiradas
+                await deleteExpiredSessions()
+
+                // Buscar sesión por token
+                const session = await getSessionByToken(sessionToken)
+                if (!session || !isSessionValid(session)) {
+                    localStorage.removeItem('restfork_session_token')
+                    context.commit('setAuthInitialized', true)
+                    return
+                }
+
+                // Buscar usuario
+                const user = await getUserById(session.userId)
+                if (!user || !user.isActive) {
+                    localStorage.removeItem('restfork_session_token')
+                    context.commit('setAuthInitialized', true)
+                    return
+                }
+
+                // Actualizar actividad de sesión
+                await updateSessionActivity(session._id)
+
+                // Establecer usuario y sesión actuales
+                context.commit('setCurrentUser', user)
+                context.commit('setCurrentSession', session)
+                
+                // IMPORTANTE: Configurar el contexto de usuario en la base de datos
+                const { setCurrentUserId } = await import('./db')
+                setCurrentUserId(user._id)
+                
+                context.commit('setAuthInitialized', true)
+            } catch (error) {
+                console.error('Error initializing auth:', error)
+                localStorage.removeItem('restfork_session_token')
+                context.commit('setAuthInitialized', true)
+            }
+        },
+
+        async signOutUser(context) {
+            try {
+                if (context.state.currentSession) {
+                    const { deactivateSession } = await import('./db')
+                    await deactivateSession(context.state.currentSession._id)
+                }
+            } catch (error) {
+                console.error('Error deactivating session:', error)
+            } finally {
+                // Limpiar estado y localStorage
+                localStorage.removeItem('restfork_session_token')
+                context.commit('clearAuthentication')
+                
+                // Limpiar contexto de usuario en la base de datos
+                const { setCurrentUserId } = await import('./db')
+                setCurrentUserId(null)
+                
+                // Limpiar workspace activo para volver a la pantalla de workspaces
+                context.commit('setActiveWorkspace', null)
+                localStorage.removeItem(constants.LOCAL_STORAGE_KEY.ACTIVE_WORKSPACE_ID)
+                
+                // Recargar datos del contexto guest
+                await context.dispatch('loadWorkspaces')
+            }
+        },
+
+        async setCurrentUser(context, user) {
+            context.commit('setCurrentUser', user)
+            // Actualizar el contexto de usuario en la base de datos
+            const { setCurrentUserId } = await import('./db')
+            setCurrentUserId(user ? user._id : null)
+            
+            // Recargar los datos para el nuevo contexto de usuario
+            if (user) {
+                await context.dispatch('loadWorkspaces')
+            }
+        },
+
+        async setCurrentSession(context, session) {
+            context.commit('setCurrentSession', session)
+            // Guardar token en localStorage para persistencia
+            localStorage.setItem('restfork_session_token', session.token)
+        },
+
+        async updateCurrentUser(context, updatedUser) {
+            context.commit('updateCurrentUser', updatedUser)
+        },
+
+        async updateSessionActivity(context) {
+            if (context.state.currentSession) {
+                const { updateSessionActivity } = await import('./utils/auth-utils')
+                await updateSessionActivity(context.state.currentSession._id)
+            }
+        }
     }
 })
 

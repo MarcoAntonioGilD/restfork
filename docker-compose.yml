@@ -6,4 +6,3 @@ services:
     container_name: Restfox
     ports:
       - "${CUSTOM_PORT_ON_HOST:-4004}:4004"
-    detach: true

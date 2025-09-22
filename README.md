@@ -5,7 +5,7 @@
 
 ## 🚀 New Features in This Fork
 
-*Features coming soon...*
+- User authentication with workspace isolation and multi-user support
 
 ### Docker (Recommended)
 ```bash
